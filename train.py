@@ -64,6 +64,9 @@ parser.add_argument('--pool', default='avg', type=str, help='pool avg')
 parser.add_argument('--stride', default=2, type=int, help='stride')
 parser.add_argument('--use_dense', action='store_true', help='use densenet121')
 parser.add_argument('--use_NAS', action='store_true', help='use NAS')
+# 添加更多模型选项
+parser.add_argument('--use_efficientnet', action='store_true', help='use EfficientNet')
+parser.add_argument('--use_resnext', action='store_true', help='use ResNeXt')
 #optimizer
 parser.add_argument('--warm_epoch', default=0, type=int, help='the first K epoch that needs warm up')
 parser.add_argument('--lr', default=0.01, type=float, help='learning rate')
@@ -79,6 +82,9 @@ parser.add_argument('--triplet', action='store_true', help='use triplet loss')
 parser.add_argument('--lifted', action='store_true', help='use lifted loss')
 parser.add_argument('--sphere', action='store_true', help='use sphere loss')
 parser.add_argument('--loss_merge', action='store_true', help='combine perspectives to calculate losses')
+# 添加新的损失函数参数
+parser.add_argument('--focal', action='store_true', help='use focal loss for imbalanced classes')
+parser.add_argument('--center', action='store_true', help='use center loss for better clustering')
 opt = parser.parse_args()
 
 if opt.resume:
@@ -106,11 +112,14 @@ if len(gpu_ids) > 0:
 #
 
 transform_train_list = [
-    # transforms.RandomResizedCrop(size=(opt.h, opt.w), scale=(0.75,1.0), ratio=(0.75,1.3333), interpolation=3), #Image.BICUBIC)
+    # transforms.RandomResizedCrop(size=(opt.h, opt.w), scale=(0.75,1.0), ratio=(0.75,1.3333), interpolation=3),
     transforms.Resize((opt.h, opt.w), interpolation=3),
     transforms.Pad(opt.pad, padding_mode='edge'),
     transforms.RandomCrop((opt.h, opt.w)),
     transforms.RandomHorizontalFlip(),
+    # 添加更多数据增强
+    # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  # 增强色彩抖动
+    transforms.RandomGrayscale(p=0.1),  # 随机灰度
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ]
@@ -135,10 +144,10 @@ if opt.erasing_p > 0:
     transform_train_list = transform_train_list + [RandomErasing(probability=opt.erasing_p, mean=[0.0, 0.0, 0.0])]
 
 if opt.color_jitter:
-    transform_train_list = [transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1,
-                                                   hue=0)] + transform_train_list
-    transform_satellite_list = [transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1,
-                                                       hue=0)] + transform_satellite_list
+    transform_train_list = [transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2,
+                                                   hue=0.1)] + transform_train_list
+    transform_satellite_list = [transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2,
+                                                       hue=0.1)] + transform_satellite_list
 
 if opt.DA:
     transform_train_list = [ImageNetPolicy()] + transform_train_list
@@ -216,7 +225,11 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
         criterion_contrast = losses.ContrastiveLoss(pos_margin=0, neg_margin=1)
     if opt.sphere:
         criterion_sphere = losses.SphereFaceLoss(num_classes=opt.nclasses, embedding_size=512, margin=4)
-
+    # 添加新的损失函数
+    if opt.focal:
+        criterion_focal = losses.FocalLoss(gamma=2.0)
+    if opt.center:
+        criterion_center = losses.CenterLoss(num_classes=opt.nclasses, feat_dim=512)
     for epoch in range(num_epochs - start_epoch):
         epoch = epoch + start_epoch
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
@@ -360,6 +373,23 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
                                 loss += criterion_sphere(ff, labels) / now_batch_size + criterion_sphere(ff2, labels2) / now_batch_size + criterion_sphere(ff3, labels3) / now_batch_size
                                 if opt.extra_Google:
                                     loss += criterion_sphere(ff4, labels4)
+                        # 添加 focal 和 center 损失函数的使用
+                        if opt.focal:
+                            if opt.loss_merge:
+                                loss += criterion_focal(ff_all, labels_all)
+                            else:
+                                loss += criterion_focal(ff, labels) + criterion_focal(ff2, labels2) + criterion_focal(ff3, labels3)
+                                if opt.extra_Google:
+                                    loss += criterion_focal(ff4, labels4)
+
+                        if opt.center:
+                            if opt.loss_merge:
+                                loss += criterion_center(ff_all, labels_all)
+                            else:
+                                loss += criterion_center(ff, labels) + criterion_center(ff2, labels2) + criterion_center(ff3, labels3)
+                                if opt.extra_Google:
+                                    loss += criterion_center(ff4, labels4)
+
 
                     else:
                         _, preds = torch.max(outputs.data, 1)
@@ -424,9 +454,9 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
             if phase == 'train':
                 scheduler.step()
             last_model_wts = model.state_dict()
-            if epoch % 20 == 19:
+            if epoch % 40 == 39:
                 save_network(model, opt.name, epoch)
-            # draw_curve(epoch)
+            draw_curve(epoch)
 
         time_elapsed = time.time() - since
         print('Training complete in {:.0f}m {:.0f}s'.format(
@@ -493,8 +523,7 @@ optimizer_ft = optim.SGD([
     {'params': model.classifier.parameters(), 'lr': opt.lr}
 ], weight_decay=5e-4, momentum=0.9, nesterov=True)
 
-# Decay LR by a factor of 0.1 every 40 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=80, gamma=0.1)
+
 
 ######################################################################
 # Train and evaluate
@@ -521,10 +550,17 @@ if fp16:
 criterion = nn.CrossEntropyLoss()
 if opt.moving_avg < 1.0:
     model_test = copy.deepcopy(model)
-    num_epochs = 140
+    num_epochs = 200
 else:
     model_test = None
-    num_epochs = 120
+    num_epochs = 200
+
+# Decay LR by a factor of 0.1 every 40 epochs
+# 修改为更平滑的学习率衰减
+exp_lr_scheduler = lr_scheduler.CosineAnnealingLR(optimizer_ft, T_max=num_epochs, eta_min=1e-5)
+# 或者使用带热重启的余弦退火
+# exp_lr_scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer_ft, T_0=10, T_mult=2)
+# exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=80, gamma=0.1)
 
 model = train_model(model, model_test, criterion, optimizer_ft, exp_lr_scheduler,
                     num_epochs=num_epochs)
