@@ -456,7 +456,7 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
             last_model_wts = model.state_dict()
             if epoch % 40 == 39:
                 save_network(model, opt.name, epoch)
-            draw_curve(epoch)
+            # draw_curve(epoch)
 
         time_elapsed = time.time() - since
         print('Training complete in {:.0f}m {:.0f}s'.format(
