@@ -1,7 +1,9 @@
 import os
 import torch
 import yaml
-from model import two_view_net, three_view_net
+import torch.nn as nn
+from html.parser import HTMLParser
+from model import ft_net, two_view_net
 
 def make_weights_for_balanced_classes(images, nclasses):
     count = [0] * nclasses
@@ -58,7 +60,7 @@ def load_network(name, opt):
        epoch = int(epoch)
     config_path = os.path.join(dirname,'opts.yaml')
     with open(config_path, 'r') as stream:
-        config = yaml.load(stream, Loader=yaml.FullLoader)
+        config = yaml.safe_load(stream)
 
     opt.name = config['name']
     opt.data_dir = config['data_dir']
@@ -70,6 +72,10 @@ def load_network(name, opt):
     opt.w = config['w']
     opt.share = config['share']
     opt.stride = config['stride']
+    if 'LPN' in config:
+        opt.LPN = config['LPN']
+    else:
+        opt.LPN = False
     if 'pool' in config:
         opt.pool = config['pool']
     if 'h' in config:
@@ -84,35 +90,49 @@ def load_network(name, opt):
     opt.use_dense = config['use_dense']
     opt.fp16 = config['fp16']
     opt.views = config['views']
-
+    if 'block' in config:
+        opt.block = config['block']
+    else:
+        opt.block = 1
+    if 'swin' in config:
+        opt.swin = config['swin']
+    else:
+        opt.swin = False
+    
     if opt.use_dense:
         model = ft_net_dense(opt.nclasses, opt.droprate, opt.stride, None, opt.pool)
-    if opt.PCB:
-        model = PCB(opt.nclasses)
-
+    # if opt.LPN:
+    #     model = LPN(opt.nclasses)
     if opt.views == 2:
-        model = two_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share)
-    elif opt.views == 3:
-        model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share)
-
-    if 'use_vgg16' in config:
         opt.use_vgg16 = config['use_vgg16']
-        if opt.views == 2:
-            model = two_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16 = opt.use_vgg16)
-        elif opt.views == 3:
-            model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16 = opt.use_vgg16)
-
-
+        model = two_view_net(opt.nclasses, droprate=opt.droprate, stride=opt.stride, pool=opt.pool, share_weight=opt.share,
+                             VGG16=opt.use_vgg16, LPN=opt.LPN, block=opt.block, swin=opt.swin)
+    else:
+        if opt.LPN:
+            # model = ft_net_LPN(opt.nclasses, droprate=opt.droprate, stride=opt.stride, pool=opt.pool, block=opt.block)
+            model = two_view_net(opt.nclasses, droprate=opt.droprate, stride=opt.stride, pool=opt.pool, share_weight=opt.share, LPN=opt.LPN, block=opt.block)
+        # elif opt.swin:
+        #     model = ft_net_swin(opt.nclasses, droprate=opt.droprate)
+        else:
+            model = ft_net(opt.nclasses, droprate=opt.droprate, stride=opt.stride, pool=opt.pool)
+    # print(model)
     # load model
     if isinstance(epoch, int):
         save_filename = 'net_%03d.pth'% epoch
     else:
         save_filename = 'net_%s.pth'% epoch
-
+    save_filename = 'net_119.pth'
     save_path = os.path.join('./model',name,save_filename)
     print('Load the model from %s'%save_path)
     network = model
-    network.load_state_dict(torch.load(save_path))
+    # network.load_state_dict(torch.load(save_path))
+    try:
+        network.load_state_dict(torch.load(save_path))
+    except:
+        network = torch.nn.DataParallel(network)
+        network.load_state_dict(torch.load(save_path), strict=False)
+        network = network.module
+
     return network, opt, epoch
 
 def toogle_grad(model, requires_grad):
@@ -131,4 +151,26 @@ def update_average(model_tgt, model_src, beta):
         p_tgt.copy_(beta*p_tgt + (1. - beta)*p_src)
 
     toogle_grad(model_src, True)
+
+class AverageMeter(object):
+    """Computes and stores the average and current value.
+
+       Code imported from https://github.com/pytorch/examples/blob/master/imagenet/main.py#L247-L262
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
 
