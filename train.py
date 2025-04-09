@@ -454,7 +454,7 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
             if phase == 'train':
                 scheduler.step()
             last_model_wts = model.state_dict()
-            if epoch % 40 == 39:
+            if epoch % 50 == 49:
                 save_network(model, opt.name, epoch)
             # draw_curve(epoch)
 
@@ -550,10 +550,10 @@ if fp16:
 criterion = nn.CrossEntropyLoss()
 if opt.moving_avg < 1.0:
     model_test = copy.deepcopy(model)
-    num_epochs = 200
+    num_epochs = 150
 else:
     model_test = None
-    num_epochs = 200
+    num_epochs = 150
 
 # Decay LR by a factor of 0.1 every 40 epochs
 # 修改为更平滑的学习率衰减
