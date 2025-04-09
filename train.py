@@ -120,6 +120,9 @@ transform_train_list = [
     # 添加更多数据增强
     # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  # 增强色彩抖动
     transforms.RandomGrayscale(p=0.1),  # 随机灰度
+    transforms.RandomApply([transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.2)], p=0.5),
+    transforms.RandomPerspective(distortion_scale=0.2, p=0.2),
+    transforms.RandomRotation(degrees=10),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ]
@@ -131,6 +134,7 @@ transform_satellite_list = [
     transforms.RandomCrop((opt.h, opt.w)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
+    transforms.RandomRotation(degrees=15),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ]
 
@@ -557,9 +561,9 @@ else:
 
 # Decay LR by a factor of 0.1 every 40 epochs
 # 修改为更平滑的学习率衰减
-exp_lr_scheduler = lr_scheduler.CosineAnnealingLR(optimizer_ft, T_max=num_epochs, eta_min=1e-5)
+#exp_lr_scheduler = lr_scheduler.CosineAnnealingLR(optimizer_ft, T_max=num_epochs, eta_min=1e-5)
 # 或者使用带热重启的余弦退火
-# exp_lr_scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer_ft, T_0=10, T_mult=2)
+exp_lr_scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer_ft, T_0=10, T_mult=2, eta_min=1e-5)
 # exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=80, gamma=0.1)
 
 model = train_model(model, model_test, criterion, optimizer_ft, exp_lr_scheduler,
