@@ -121,8 +121,27 @@ def load_network(name, opt):
         save_filename = 'net_%03d.pth'% epoch
     else:
         save_filename = 'net_%s.pth'% epoch
-    save_filename = 'net_119.pth'
-    save_path = os.path.join('./model',name,save_filename)
+        
+    # 删除这一行硬编码
+    # save_filename = 'net_119.pth'
+    
+    # 添加自动查找最新模型文件的逻辑
+    save_path = os.path.join('./model', name, save_filename)
+    if not os.path.exists(save_path) and (epoch == 'last' or isinstance(epoch, str)):
+        print(f"找不到指定的模型文件: {save_path}")
+        model_dir = os.path.join('./model', name)
+        model_files = [f for f in os.listdir(model_dir) if f.startswith('net_') and f.endswith('.pth')]
+        if model_files:
+            # 按照数字排序，选择最后一个
+            model_files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]) if x.split('_')[1].split('.')[0].isdigit() else 0)
+            last_model = model_files[-1]
+            save_filename = last_model
+            save_path = os.path.join('./model', name, save_filename)
+            print(f"自动选择最新的模型文件: {save_path}")
+            # 更新 epoch 值
+            epoch_str = save_filename.split('_')[1].split('.')[0]
+            if epoch_str.isdigit():
+                epoch = int(epoch_str)
     print('Load the model from %s'%save_path)
     network = model
     # network.load_state_dict(torch.load(save_path))
