@@ -241,30 +241,7 @@ def get_result_rank10(qf,gf,gl):
 # Load Collected data Trained model
 print('-------test-----------')
 
-# 修改模型加载部分，确保能够加载最后一个模型
-try:
-    model, _, epoch = load_network(opt.name, opt)
-except FileNotFoundError:
-    print("指定的模型文件不存在，尝试加载最后一个可用的模型...")
-    # 获取模型目录
-    model_dir = os.path.join('./model', opt.name)
-    if not os.path.isdir(model_dir):
-        raise FileNotFoundError(f"模型目录不存在: {model_dir}")
-    
-    # 查找所有 net_*.pth 文件
-    model_files = [f for f in os.listdir(model_dir) if f.startswith('net_') and f.endswith('.pth')]
-    if not model_files:
-        raise FileNotFoundError(f"在 {model_dir} 中没有找到任何模型文件")
-    
-    # 按照数字排序，选择最后一个
-    model_files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
-    last_model = model_files[-1]
-    print(f"加载最后一个模型: {last_model}")
-    
-    # 修改 opt.which_epoch 为最后一个模型的 epoch
-    opt.which_epoch = last_model.split('_')[1].split('.')[0]
-    model, _, epoch = load_network(opt.name, opt)
-
+model, _, epoch = load_network(opt.name, opt)
 if opt.LPN:
     print('use LPN')
     # model = three_view_net_test(model)
