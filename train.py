@@ -292,9 +292,9 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
         criterion_sphere = losses.SphereFaceLoss(num_classes=opt.nclasses, embedding_size=512, margin=4)
     # 添加新的损失函数
     if opt.focal:
-        criterion_focal = losses.FocalLoss(gamma=2.0)
+        criterion_focal = FocalLoss(gamma=2.0)
     if opt.center:
-        criterion_center = losses.CenterLoss(num_classes=opt.nclasses, feat_dim=512)
+        criterion_center = CenterLoss(num_classes=opt.nclasses, feat_dim=512)
     for epoch in range(num_epochs - start_epoch):
         epoch = epoch + start_epoch
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
