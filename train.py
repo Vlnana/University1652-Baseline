@@ -30,6 +30,67 @@ from utils import update_average, get_model_list, load_network, save_network, ma
 from pytorch_metric_learning import losses, miners  # pip install pytorch-metric-learning
 from circle_loss import CircleLoss, convert_label_to_similarity
 
+# 添加 Focal Loss 实现
+import torch.nn.functional as F
+
+# 自定义 Focal Loss 实现
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2.0, alpha=None, size_average=True):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.size_average = size_average
+
+    def forward(self, input, target):
+        if input.dim() > 2:
+            input = input.view(input.size(0), input.size(1), -1)  # N,C,H,W => N,C,H*W
+            input = input.transpose(1, 2)  # N,C,H*W => N,H*W,C
+            input = input.contiguous().view(-1, input.size(2))  # N,H*W,C => N*H*W,C
+        target = target.view(-1, 1)
+
+        logpt = F.log_softmax(input, dim=1)
+        logpt = logpt.gather(1, target)
+        logpt = logpt.view(-1)
+        pt = logpt.exp()
+
+        if self.alpha is not None:
+            if self.alpha.type() != input.data.type():
+                self.alpha = self.alpha.type_as(input.data)
+            at = self.alpha.gather(0, target.data.view(-1))
+            logpt = logpt * at
+
+        loss = -1 * (1 - pt) ** self.gamma * logpt
+        if self.size_average:
+            return loss.mean()
+        else:
+            return loss.sum()
+
+# 自定义 Center Loss 实现
+class CenterLoss(nn.Module):
+    def __init__(self, num_classes, feat_dim, size_average=True):
+        super(CenterLoss, self).__init__()
+        self.centers = nn.Parameter(torch.randn(num_classes, feat_dim))
+        self.size_average = size_average
+        self.feat_dim = feat_dim
+
+    def forward(self, x, labels):
+        batch_size = x.size(0)
+        distmat = torch.pow(x, 2).sum(dim=1, keepdim=True).expand(batch_size, self.centers.size(0)) + \
+                  torch.pow(self.centers, 2).sum(dim=1, keepdim=True).expand(self.centers.size(0), batch_size).t()
+        distmat.addmm_(x, self.centers.t(), beta=1, alpha=-2)
+
+        classes = torch.arange(self.centers.size(0)).long()
+        if x.is_cuda:
+            classes = classes.cuda()
+        labels = labels.unsqueeze(1).expand(batch_size, self.centers.size(0))
+        mask = labels.eq(classes.expand_as(labels))
+
+        dist = distmat * mask.float()
+        loss = dist.clamp(min=1e-12, max=1e+12).sum() / batch_size
+
+        return loss
+
+
 version = torch.__version__
 # fp16
 try:
