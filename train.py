@@ -554,10 +554,10 @@ if fp16:
 criterion = nn.CrossEntropyLoss()
 if opt.moving_avg < 1.0:
     model_test = copy.deepcopy(model)
-    num_epochs = 200
+    num_epochs = 300
 else:
     model_test = None
-    num_epochs = 200
+    num_epochs = 300
 
 # Decay LR by a factor of 0.1 every 40 epochs
 # 修改为更平滑的学习率衰减
